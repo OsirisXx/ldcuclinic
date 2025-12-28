@@ -52,7 +52,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Meta />
         <Links />
       </head>
-      <body className="bg-white text-gray-900 antialiased">
+      <body className="bg-white text-gray-900 antialiased" suppressHydrationWarning>
         {children}
         <ScrollRestoration />
         <Scripts />
@@ -67,6 +67,7 @@ export default function App() {
   return (
     <>
       <script
+        suppressHydrationWarning
         dangerouslySetInnerHTML={{
           __html: `window.ENV = ${JSON.stringify(env)}`,
         }}
