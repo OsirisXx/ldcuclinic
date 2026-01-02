@@ -1807,31 +1807,37 @@ export default function Schedule() {
             setRescheduleWeekOffset(0);
           }}
           title="Reschedule Appointment"
-          size="xl"
+          size="3xl"
         >
           {editingAppointment && (
-            <div className="space-y-4">
-              {/* Current Appointment Info */}
-              <div className="bg-maroon-50 rounded-lg p-4">
-                <h4 className="font-medium text-maroon-900 mb-2">Current Appointment</h4>
-                <div className="grid grid-cols-2 gap-2 text-sm text-maroon-700">
-                  <p><strong>Patient:</strong> {editingAppointment.patient_name}</p>
-                  <p><strong>Type:</strong> {editingAppointment.appointment_type === 'physical_exam' ? 'Physical Exam' : 'Consultation'}</p>
-                  <p><strong>Date:</strong> {formatDate(editingAppointment.appointment_date)}</p>
-                  <p><strong>Time:</strong> {formatTime(editingAppointment.start_time)} - {formatTime(editingAppointment.end_time)}</p>
-                </div>
-              </div>
-
-              {/* Selected New Slot */}
-              {selectedRescheduleSlot && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <h4 className="font-medium text-green-900 mb-2">New Time Selected</h4>
-                  <div className="text-sm text-green-700">
-                    <p><strong>Date:</strong> {new Date(selectedRescheduleSlot.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p>
-                    <p><strong>Time:</strong> {formatTime(selectedRescheduleSlot.start)} - {formatTime(selectedRescheduleSlot.end)}</p>
+            <div className="space-y-3">
+              {/* Current Appointment Info & Selected New Slot - Side by Side */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-maroon-50 rounded-lg p-3">
+                  <h4 className="font-medium text-maroon-900 mb-1 text-sm">Current Appointment</h4>
+                  <div className="text-xs text-maroon-700 space-y-0.5">
+                    <p><strong>Patient:</strong> {editingAppointment.patient_name}</p>
+                    <p><strong>Type:</strong> {editingAppointment.appointment_type === 'physical_exam' ? 'Physical Exam' : 'Consultation'}</p>
+                    <p><strong>Date:</strong> {formatDate(editingAppointment.appointment_date)}</p>
+                    <p><strong>Time:</strong> {formatTime(editingAppointment.start_time)} - {formatTime(editingAppointment.end_time)}</p>
                   </div>
                 </div>
-              )}
+
+                {/* Selected New Slot */}
+                {selectedRescheduleSlot ? (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                    <h4 className="font-medium text-green-900 mb-1 text-sm">New Time Selected</h4>
+                    <div className="text-xs text-green-700 space-y-0.5">
+                      <p><strong>Date:</strong> {new Date(selectedRescheduleSlot.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</p>
+                      <p><strong>Time:</strong> {formatTime(selectedRescheduleSlot.start)} - {formatTime(selectedRescheduleSlot.end)}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 flex items-center justify-center">
+                    <p className="text-xs text-gray-500">Select a new time slot below</p>
+                  </div>
+                )}
+              </div>
 
               {/* Week Navigation */}
               <div className="flex items-center justify-between">
@@ -1863,7 +1869,7 @@ export default function Schedule() {
 
               {/* Calendar Grid */}
               <div className="border rounded-lg overflow-hidden">
-                <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+                <div className="overflow-x-auto max-h-[280px] overflow-y-auto">
                   <table className="w-full border-collapse">
                     <thead className="sticky top-0 bg-gray-100 z-10">
                       <tr>
