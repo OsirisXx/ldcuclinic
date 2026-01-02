@@ -140,6 +140,11 @@ export default function Schedule() {
   const [isSendingEmails, setIsSendingEmails] = useState(false);
   const [emailResult, setEmailResult] = useState<{ sent: number; skipped: number; failed: number } | null>(null);
 
+  // Individual appointment reschedule state
+  const [showIndividualRescheduleModal, setShowIndividualRescheduleModal] = useState(false);
+  const [rescheduleWeekOffset, setRescheduleWeekOffset] = useState(0);
+  const [selectedRescheduleSlot, setSelectedRescheduleSlot] = useState<{ date: string; start: string; end: string } | null>(null);
+
   // Handle successful booking
   useEffect(() => {
     if (actionData?.success) {
@@ -608,6 +613,88 @@ export default function Schedule() {
     
     // Trigger reschedule
     await handleRescheduleAppointments();
+  };
+
+  // Handle individual appointment reschedule
+  const handleIndividualReschedule = async () => {
+    if (!editingAppointment || !selectedRescheduleSlot) return;
+    
+    try {
+      const supabase = createSupabaseBrowserClient();
+      await (supabase.from('appointments') as any).update({
+        appointment_date: selectedRescheduleSlot.date,
+        start_time: selectedRescheduleSlot.start,
+        end_time: selectedRescheduleSlot.end,
+      }).eq('id', editingAppointment.id);
+      
+      setShowIndividualRescheduleModal(false);
+      setShowEditModal(false);
+      setEditingAppointment(null);
+      setSelectedRescheduleSlot(null);
+      setRescheduleWeekOffset(0);
+      fetchData();
+      setShowSuccessAlert(true);
+      setSuccessMessage('Appointment rescheduled successfully');
+    } catch (error) {
+      console.error('Error rescheduling:', error);
+      alert('Failed to reschedule appointment');
+    }
+  };
+
+  // Get week days for reschedule calendar
+  const getRescheduleWeekDays = () => {
+    const baseDate = new Date();
+    baseDate.setDate(baseDate.getDate() + rescheduleWeekOffset * 7);
+    const { start } = getWeekBounds(baseDate);
+    const days: Date[] = [];
+    for (let i = 0; i < 7; i++) {
+      const day = new Date(start);
+      day.setDate(start.getDate() + i);
+      days.push(day);
+    }
+    return days;
+  };
+
+  // Check if a slot is available for rescheduling (not booked by others)
+  const isRescheduleSlotAvailable = (date: Date, slotStart: string) => {
+    const dateStr = formatLocalDate(date);
+    const dayOfWeek = date.getDay();
+    
+    // Check if day is configured
+    const daySettings = scheduleSettings.find(
+      (s: any) => s.day_of_week === dayOfWeek && s.campus_id === selectedCampus
+    );
+    if (!daySettings) return { available: false, reason: 'Not configured' };
+    
+    // Check if it's a hidden day or holiday
+    if (hiddenDays.includes(dayOfWeek) || holidays.includes(dateStr)) {
+      return { available: false, reason: 'Closed' };
+    }
+    
+    // Check if slot is within operating hours
+    const slotHour = parseInt(slotStart.split(':')[0]);
+    if (isHalfDay(date) && slotHour >= 12) {
+      return { available: false, reason: 'Half day' };
+    }
+    
+    // Check existing appointments (excluding the one being rescheduled)
+    const existingInSlot = existingAppointments.filter(
+      (a: any) =>
+        a.id !== editingAppointment?.id &&
+        a.appointment_date === dateStr &&
+        a.start_time === slotStart &&
+        a.campus_id === selectedCampus &&
+        a.status === 'scheduled'
+    );
+    
+    // Get max slots for this time
+    const maxSlots = daySettings.max_appointments_per_slot || 1;
+    
+    if (existingInSlot.length >= maxSlots) {
+      return { available: false, reason: 'Full' };
+    }
+    
+    return { available: true, bookedCount: existingInSlot.length, maxSlots };
   };
 
   // Handle sending email reminders
@@ -1141,6 +1228,25 @@ export default function Schedule() {
                   />
                 </div>
               </div>
+
+              {/* Reschedule Button */}
+              {editingAppointment.status === 'scheduled' && (
+                <div className="border-t pt-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full text-blue-600 border-blue-300 hover:bg-blue-50"
+                    onClick={() => {
+                      setShowIndividualRescheduleModal(true);
+                      setRescheduleWeekOffset(0);
+                      setSelectedRescheduleSlot(null);
+                    }}
+                  >
+                    <Calendar className="w-4 h-4 mr-2" />
+                    Reschedule Appointment
+                  </Button>
+                </div>
+              )}
 
               {/* Status Update Section */}
               {editingAppointment.status === 'scheduled' && (
@@ -1690,6 +1796,237 @@ export default function Schedule() {
               </Button>
             </div>
           </div>
+        </Modal>
+
+        {/* Individual Reschedule Modal */}
+        <Modal
+          isOpen={showIndividualRescheduleModal}
+          onClose={() => {
+            setShowIndividualRescheduleModal(false);
+            setSelectedRescheduleSlot(null);
+            setRescheduleWeekOffset(0);
+          }}
+          title="Reschedule Appointment"
+          size="xl"
+        >
+          {editingAppointment && (
+            <div className="space-y-4">
+              {/* Current Appointment Info */}
+              <div className="bg-maroon-50 rounded-lg p-4">
+                <h4 className="font-medium text-maroon-900 mb-2">Current Appointment</h4>
+                <div className="grid grid-cols-2 gap-2 text-sm text-maroon-700">
+                  <p><strong>Patient:</strong> {editingAppointment.patient_name}</p>
+                  <p><strong>Type:</strong> {editingAppointment.appointment_type === 'physical_exam' ? 'Physical Exam' : 'Consultation'}</p>
+                  <p><strong>Date:</strong> {formatDate(editingAppointment.appointment_date)}</p>
+                  <p><strong>Time:</strong> {formatTime(editingAppointment.start_time)} - {formatTime(editingAppointment.end_time)}</p>
+                </div>
+              </div>
+
+              {/* Selected New Slot */}
+              {selectedRescheduleSlot && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <h4 className="font-medium text-green-900 mb-2">New Time Selected</h4>
+                  <div className="text-sm text-green-700">
+                    <p><strong>Date:</strong> {new Date(selectedRescheduleSlot.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p>
+                    <p><strong>Time:</strong> {formatTime(selectedRescheduleSlot.start)} - {formatTime(selectedRescheduleSlot.end)}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Week Navigation */}
+              <div className="flex items-center justify-between">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setRescheduleWeekOffset(rescheduleWeekOffset - 1)}
+                >
+                  <ChevronLeft className="w-4 h-4 mr-1" />
+                  Previous Week
+                </Button>
+                <span className="text-sm font-medium text-gray-700">
+                  {(() => {
+                    const days = getRescheduleWeekDays();
+                    return `${formatDate(formatLocalDate(days[0]))} - ${formatDate(formatLocalDate(days[6]))}`;
+                  })()}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setRescheduleWeekOffset(rescheduleWeekOffset + 1)}
+                >
+                  Next Week
+                  <ChevronRight className="w-4 h-4 ml-1" />
+                </Button>
+              </div>
+
+              {/* Calendar Grid */}
+              <div className="border rounded-lg overflow-hidden">
+                <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+                  <table className="w-full border-collapse">
+                    <thead className="sticky top-0 bg-gray-100 z-10">
+                      <tr>
+                        <th className="p-2 text-xs font-medium text-gray-500 border-r" style={{ width: '70px' }}>Time</th>
+                        {getRescheduleWeekDays().map((date, idx) => {
+                          const isToday = new Date().toDateString() === date.toDateString();
+                          const dateStr = formatLocalDate(date);
+                          const isHoliday = holidays.includes(dateStr);
+                          const isHidden = hiddenDays.includes(date.getDay());
+                          return (
+                            <th
+                              key={idx}
+                              className={`p-2 text-center border-r last:border-r-0 ${
+                                isToday ? 'bg-maroon-100' : isHoliday || isHidden ? 'bg-gray-200' : ''
+                              }`}
+                              style={{ minWidth: '100px' }}
+                            >
+                              <div className="text-xs font-medium text-gray-500">
+                                {date.toLocaleDateString('en-US', { weekday: 'short' })}
+                              </div>
+                              <div className={`text-sm font-bold ${isToday ? 'text-maroon-700' : 'text-gray-900'}`}>
+                                {date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                              </div>
+                              {(isHoliday || isHidden) && (
+                                <div className="text-xs text-red-500">Closed</div>
+                              )}
+                            </th>
+                          );
+                        })}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {timeSlots.map((slot, slotIndex) => (
+                        <tr key={slot.start} className={slotIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+                          <td className="p-2 text-xs text-gray-500 border-r text-center font-medium">
+                            {slot.label}
+                          </td>
+                          {getRescheduleWeekDays().map((date, idx) => {
+                            const dateStr = formatLocalDate(date);
+                            const slotInfo = isRescheduleSlotAvailable(date, slot.start);
+                            const isPast = isPastDate(date) || (new Date().toDateString() === date.toDateString() && 
+                              parseInt(slot.start.split(':')[0]) <= new Date().getHours());
+                            const isSelected = selectedRescheduleSlot?.date === dateStr && 
+                              selectedRescheduleSlot?.start === slot.start;
+                            const isCurrentSlot = editingAppointment.appointment_date === dateStr && 
+                              editingAppointment.start_time === slot.start;
+
+                            // Get appointments in this slot for display
+                            const slotAppointments = existingAppointments.filter(
+                              (a: any) =>
+                                a.id !== editingAppointment.id &&
+                                a.appointment_date === dateStr &&
+                                a.start_time === slot.start &&
+                                a.campus_id === selectedCampus &&
+                                a.status === 'scheduled'
+                            );
+
+                            if (!slotInfo.available || isPast) {
+                              return (
+                                <td
+                                  key={`${dateStr}-${slot.start}`}
+                                  className={`p-1 border-r last:border-r-0 ${
+                                    isCurrentSlot ? 'bg-maroon-100' : 'bg-gray-100'
+                                  }`}
+                                >
+                                  <div className="text-xs text-gray-400 text-center">
+                                    {isCurrentSlot ? (
+                                      <span className="text-maroon-600 font-medium">Current</span>
+                                    ) : isPast ? (
+                                      'Past'
+                                    ) : slotInfo.reason === 'Full' ? (
+                                      <span className="text-red-500">Full</span>
+                                    ) : (
+                                      slotInfo.reason || 'N/A'
+                                    )}
+                                  </div>
+                                  {slotAppointments.length > 0 && (
+                                    <div className="text-xs text-gray-500 mt-1">
+                                      {slotAppointments.length} booked
+                                    </div>
+                                  )}
+                                </td>
+                              );
+                            }
+
+                            return (
+                              <td
+                                key={`${dateStr}-${slot.start}`}
+                                className={`p-1 border-r last:border-r-0 cursor-pointer transition-colors ${
+                                  isSelected
+                                    ? 'bg-green-200 hover:bg-green-300'
+                                    : 'bg-green-50 hover:bg-green-100'
+                                }`}
+                                onClick={() => setSelectedRescheduleSlot({
+                                  date: dateStr,
+                                  start: slot.start,
+                                  end: slot.end,
+                                })}
+                              >
+                                <div className="text-xs text-center">
+                                  {isSelected ? (
+                                    <span className="text-green-700 font-bold">✓ Selected</span>
+                                  ) : (
+                                    <span className="text-green-600">
+                                      {slotAppointments.length > 0 
+                                        ? `${slotAppointments.length}/${slotInfo.maxSlots || 1}` 
+                                        : 'Available'}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Legend */}
+              <div className="flex flex-wrap gap-4 text-xs">
+                <div className="flex items-center gap-1">
+                  <div className="w-4 h-4 bg-green-50 border rounded"></div>
+                  <span>Available</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-4 h-4 bg-green-200 border rounded"></div>
+                  <span>Selected</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-4 h-4 bg-maroon-100 border rounded"></div>
+                  <span>Current Slot</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-4 h-4 bg-gray-100 border rounded"></div>
+                  <span>Unavailable</span>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex justify-end space-x-3 pt-4 border-t">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setShowIndividualRescheduleModal(false);
+                    setSelectedRescheduleSlot(null);
+                    setRescheduleWeekOffset(0);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleIndividualReschedule}
+                  disabled={!selectedRescheduleSlot}
+                >
+                  Confirm Reschedule
+                </Button>
+              </div>
+            </div>
+          )}
         </Modal>
       </div>
     </Layout>
