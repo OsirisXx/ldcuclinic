@@ -21,7 +21,7 @@ export async function action({ request }: ActionFunctionArgs) {
     .eq("id", session.user.id)
     .single();
 
-  if (!profile || !["admin", "doctor", "nurse"].includes(profile.role)) {
+  if (!profile || !["admin", "doctor", "nurse", "employee"].includes(profile.role)) {
     return json({ error: "Unauthorized - Staff only" }, { status: 403 });
   }
 
