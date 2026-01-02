@@ -2,7 +2,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remi
 import { json, redirect } from "@remix-run/node";
 import { Form, useLoaderData, useActionData, useNavigation, useFetcher } from "@remix-run/react";
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { Calendar, Clock, ChevronLeft, ChevronRight, AlertCircle, User, Loader2, Settings, Trash2 } from "lucide-react";
+import { Calendar, Clock, ChevronLeft, ChevronRight, AlertCircle, User, Loader2, Settings, Trash2, Mail } from "lucide-react";
 import { Layout } from "~/components/layout";
 import { Button, Card, CardHeader, CardTitle, CardContent, Select, Input, Modal } from "~/components/ui";
 import { createSupabaseServerClient } from "~/lib/supabase.server";
@@ -132,6 +132,13 @@ export default function Schedule() {
   const [halfDays, setHalfDays] = useState<number[]>([]); // Days with morning only
   const [holidays, setHolidays] = useState<string[]>([]); // Array of date strings "YYYY-MM-DD"
   const [newHolidayDate, setNewHolidayDate] = useState<string>("");
+  
+  // Email reminder state
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailTarget, setEmailTarget] = useState<"today" | "tomorrow" | "custom">("tomorrow");
+  const [customEmailDate, setCustomEmailDate] = useState<string>("");
+  const [isSendingEmails, setIsSendingEmails] = useState(false);
+  const [emailResult, setEmailResult] = useState<{ sent: number; skipped: number; failed: number } | null>(null);
 
   // Handle successful booking
   useEffect(() => {
@@ -595,6 +602,53 @@ export default function Schedule() {
     await handleRescheduleAppointments();
   };
 
+  // Handle sending email reminders
+  const handleSendReminders = async () => {
+    setIsSendingEmails(true);
+    setEmailResult(null);
+    
+    try {
+      let targetDate: string;
+      if (emailTarget === "today") {
+        targetDate = "today";
+      } else if (emailTarget === "tomorrow") {
+        targetDate = "tomorrow";
+      } else {
+        targetDate = customEmailDate;
+      }
+
+      const formData = new FormData();
+      formData.append("targetDate", targetDate);
+      formData.append("campusId", selectedCampus);
+
+      const response = await fetch("/api/send-reminders", {
+        method: "POST",
+        body: formData,
+      });
+
+      const result = await response.json();
+      
+      if (result.error) {
+        throw new Error(result.error);
+      }
+
+      setEmailResult({
+        sent: result.sent || 0,
+        skipped: result.skipped || 0,
+        failed: result.failed || 0,
+      });
+
+      if (result.sent > 0) {
+        setShowSuccessAlert(true);
+        setSuccessMessage(result.message);
+      }
+    } catch (error: any) {
+      alert(`Failed to send reminders: ${error.message}`);
+    } finally {
+      setIsSendingEmails(false);
+    }
+  };
+
   return (
     <Layout user={profile} onLogout={handleLogout}>
       <div className="max-w-[95%] mx-auto px-2 sm:px-3 lg:px-4 py-8">
@@ -688,6 +742,21 @@ export default function Schedule() {
                 >
                   <Settings className="w-4 h-4 mr-2" />
                   Settings
+                </Button>
+              </div>
+
+              <div className="pt-4 border-t">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    setShowEmailModal(true);
+                    setEmailResult(null);
+                  }}
+                >
+                  <Mail className="w-4 h-4 mr-2" />
+                  Send Reminders
                 </Button>
               </div>
             </CardContent>
@@ -1481,6 +1550,135 @@ export default function Schedule() {
                 onClick={() => setShowSettingsModal(false)}
               >
                 Done
+              </Button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* Email Reminders Modal */}
+        <Modal
+          isOpen={showEmailModal}
+          onClose={() => setShowEmailModal(false)}
+          title="Send Email Reminders"
+          size="md"
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Send appointment reminder emails to patients scheduled for a specific date.
+              Only patients with valid email addresses will receive reminders.
+            </p>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Send reminders for:
+              </label>
+              <div className="space-y-2">
+                <label className="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                  <input
+                    type="radio"
+                    name="emailTarget"
+                    value="today"
+                    checked={emailTarget === "today"}
+                    onChange={() => setEmailTarget("today")}
+                    className="mr-3"
+                  />
+                  <div>
+                    <span className="font-medium">Today</span>
+                    <p className="text-xs text-gray-500">
+                      {new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
+                    </p>
+                  </div>
+                </label>
+
+                <label className="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                  <input
+                    type="radio"
+                    name="emailTarget"
+                    value="tomorrow"
+                    checked={emailTarget === "tomorrow"}
+                    onChange={() => setEmailTarget("tomorrow")}
+                    className="mr-3"
+                  />
+                  <div>
+                    <span className="font-medium">Tomorrow</span>
+                    <p className="text-xs text-gray-500">
+                      {(() => {
+                        const tomorrow = new Date();
+                        tomorrow.setDate(tomorrow.getDate() + 1);
+                        return tomorrow.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+                      })()}
+                    </p>
+                  </div>
+                </label>
+
+                <label className="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                  <input
+                    type="radio"
+                    name="emailTarget"
+                    value="custom"
+                    checked={emailTarget === "custom"}
+                    onChange={() => setEmailTarget("custom")}
+                    className="mr-3"
+                  />
+                  <div className="flex-1">
+                    <span className="font-medium">Custom Date</span>
+                    {emailTarget === "custom" && (
+                      <input
+                        type="date"
+                        value={customEmailDate}
+                        onChange={(e) => setCustomEmailDate(e.target.value)}
+                        className="mt-2 w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-maroon-500"
+                        min={new Date().toISOString().split("T")[0]}
+                      />
+                    )}
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            {emailResult && (
+              <div className="bg-gray-50 border rounded-lg p-4">
+                <h4 className="font-medium text-gray-900 mb-2">Results:</h4>
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div>
+                    <p className="text-2xl font-bold text-green-600">{emailResult.sent}</p>
+                    <p className="text-xs text-gray-500">Sent</p>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-yellow-600">{emailResult.skipped}</p>
+                    <p className="text-xs text-gray-500">No Email</p>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-red-600">{emailResult.failed}</p>
+                    <p className="text-xs text-gray-500">Failed</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+              <p className="text-sm text-yellow-800">
+                <strong>Note:</strong> This will send emails to all scheduled appointments for the selected date 
+                in the currently selected campus. Use sparingly to conserve email quota.
+              </p>
+            </div>
+
+            <div className="flex justify-end space-x-3 pt-4 border-t">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowEmailModal(false)}
+              >
+                Close
+              </Button>
+              <Button
+                type="button"
+                onClick={handleSendReminders}
+                disabled={isSendingEmails || (emailTarget === "custom" && !customEmailDate)}
+                isLoading={isSendingEmails}
+              >
+                <Mail className="w-4 h-4 mr-2" />
+                Send Reminders
               </Button>
             </div>
           </div>
