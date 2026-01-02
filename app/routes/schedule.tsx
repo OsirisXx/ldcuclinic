@@ -159,6 +159,14 @@ export default function Schedule() {
     }
   }, [actionData]);
 
+  // Helper: Format date to local YYYY-MM-DD string (avoid timezone issues)
+  const formatLocalDate = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   // Calculate week bounds
   const baseDate = new Date();
   baseDate.setDate(baseDate.getDate() + weekOffset * 7);
@@ -169,8 +177,8 @@ export default function Schedule() {
     setIsLoading(true);
     try {
       const supabase = createSupabaseBrowserClient();
-      const weekStartStr = weekStart.toISOString().split("T")[0];
-      const weekEndStr = weekEnd.toISOString().split("T")[0];
+      const weekStartStr = formatLocalDate(weekStart);
+      const weekEndStr = formatLocalDate(weekEnd);
 
       const [
         settingsRes,
@@ -321,7 +329,7 @@ export default function Schedule() {
 
   // Check if slot is available (has capacity)
   const isSlotAvailable = (date: Date, slotStart: string) => {
-    const dateStr = date.toISOString().split("T")[0];
+    const dateStr = formatLocalDate(date);
     const dayOfWeek = date.getDay();
     
     // Check if any schedule settings exist for this day and campus (regardless of appointment type)
@@ -371,7 +379,7 @@ export default function Schedule() {
   };
 
   const getTodayAppointmentsOfType = () => {
-    const today = new Date().toISOString().split("T")[0];
+    const today = formatLocalDate(new Date());
     return existingAppointments.filter(
       (a: any) => a.appointment_type === appointmentType && a.appointment_date === today
     ).length;
@@ -419,7 +427,7 @@ export default function Schedule() {
   };
 
   const handleSlotSelect = (date: Date, slotStart: string, slotEnd: string) => {
-    setSelectedDate(date.toISOString().split("T")[0]);
+    setSelectedDate(formatLocalDate(date));
     setSelectedSlot({ start: slotStart, end: slotEnd });
     setShowModal(true);
   };
@@ -427,7 +435,7 @@ export default function Schedule() {
   // Helper: Check if a date should be skipped (skip days or holidays)
   const shouldSkipDate = (date: Date): boolean => {
     const dayOfWeek = date.getDay();
-    const dateStr = date.toISOString().split("T")[0];
+    const dateStr = formatLocalDate(date);
     return hiddenDays.includes(dayOfWeek) || holidays.includes(dateStr);
   };
   
@@ -460,7 +468,7 @@ export default function Schedule() {
     setIsRescheduling(true);
     try {
       const supabase = createSupabaseBrowserClient();
-      const dateStr = rescheduleDate.toISOString().split("T")[0];
+      const dateStr = formatLocalDate(rescheduleDate);
       const dailyLimit = getDailyLimitForType();
       
       // Get all appointments for this date from the selected time onwards
@@ -494,7 +502,7 @@ export default function Schedule() {
         .from("appointments")
         .select("*")
         .eq("campus_id", selectedCampus)
-        .gte("appointment_date", targetDate.toISOString().split("T")[0])
+        .gte("appointment_date", formatLocalDate(targetDate))
         .eq("status", "scheduled")
         .order("appointment_date", { ascending: true })
         .order("start_time", { ascending: true });
@@ -556,7 +564,7 @@ export default function Schedule() {
         
         const newStartTime = minutesToTime(currentMinutes);
         const newEndTime = minutesToTime(currentMinutes + slotDuration);
-        const newDateStr = currentDate.toISOString().split("T")[0];
+        const newDateStr = formatLocalDate(currentDate);
         
         // Update the appointment
         await (supabase.from("appointments") as any).update({
@@ -588,7 +596,7 @@ export default function Schedule() {
   const handleMarkHoliday = async () => {
     if (!rescheduleDate) return;
     
-    const dateStr = rescheduleDate.toISOString().split("T")[0];
+    const dateStr = formatLocalDate(rescheduleDate);
     
     // Add to holidays list
     if (!holidays.includes(dateStr)) {
@@ -859,7 +867,7 @@ export default function Schedule() {
 
                           {/* Day cells */}
                           {weekDays.map((date, idx) => {
-                            const dateStr = date.toISOString().split("T")[0];
+                            const dateStr = formatLocalDate(date);
                             const isDisabled = isPastDate(date);
                             const isConfigured = isDayConfigured(date);
                             const slotInfo = isSlotAvailable(date, slot.start);
@@ -1253,7 +1261,7 @@ export default function Schedule() {
                 </p>
                 <p className="text-sm text-maroon-700 mt-1">
                   {existingAppointments.filter((a: any) => 
-                    a.appointment_date === rescheduleDate.toISOString().split("T")[0] && 
+                    a.appointment_date === formatLocalDate(rescheduleDate) && 
                     a.campus_id === selectedCampus
                   ).length} appointment(s) scheduled
                 </p>
@@ -1628,7 +1636,7 @@ export default function Schedule() {
                         value={customEmailDate}
                         onChange={(e) => setCustomEmailDate(e.target.value)}
                         className="mt-2 w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-maroon-500"
-                        min={new Date().toISOString().split("T")[0]}
+                        min={formatLocalDate(new Date())}
                       />
                     )}
                   </div>
