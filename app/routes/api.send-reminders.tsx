@@ -104,7 +104,7 @@ export async function action({ request }: ActionFunctionArgs) {
         : "Consultation";
 
       await resend.emails.send({
-        from: "LDCU Clinic <onboarding@resend.dev>",
+        from: "LDCU Clinic <noreply@citattendance.info>",
         to: appt.patient_email,
         subject: `📅 Appointment Reminder - ${formattedDate} | LDCU Clinic`,
         html: `
