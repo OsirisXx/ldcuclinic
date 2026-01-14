@@ -1,13 +1,19 @@
 import type { ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Resend } from "resend";
-import { createSupabaseServerClient, createSupabaseAdminClient } from "~/lib/supabase.server";
+import {
+  createSupabaseServerClient,
+  createSupabaseAdminClient,
+} from "~/lib/supabase.server";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const resendApiKey = process.env.RESEND_API_KEY;
+const resend = resendApiKey ? new Resend(resendApiKey) : null;
 
 export async function action({ request }: ActionFunctionArgs) {
   const { supabase, headers } = createSupabaseServerClient(request);
-  const { data: { session } } = await supabase.auth.getSession();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
 
   if (!session?.user) {
     return json({ error: "Unauthorized" }, { status: 401 });
@@ -21,7 +27,10 @@ export async function action({ request }: ActionFunctionArgs) {
     .eq("id", session.user.id)
     .single();
 
-  if (!profile || !["admin", "doctor", "nurse", "employee"].includes(profile.role)) {
+  if (
+    !profile ||
+    !["admin", "doctor", "nurse", "employee"].includes(profile.role)
+  ) {
     return json({ error: "Unauthorized - Staff only" }, { status: 403 });
   }
 
@@ -30,13 +39,16 @@ export async function action({ request }: ActionFunctionArgs) {
   const campusId = formData.get("campusId") as string;
 
   if (!targetDate || !campusId) {
-    return json({ error: "Target date and campus are required" }, { status: 400 });
+    return json(
+      { error: "Target date and campus are required" },
+      { status: 400 }
+    );
   }
 
   // Calculate the actual date
   let dateStr: string;
   const today = new Date();
-  
+
   if (targetDate === "today") {
     dateStr = today.toISOString().split("T")[0];
   } else if (targetDate === "tomorrow") {
@@ -50,7 +62,8 @@ export async function action({ request }: ActionFunctionArgs) {
   // Fetch appointments for the target date with patient emails
   const { data: appointments, error: fetchError } = await adminClient
     .from("appointments")
-    .select(`
+    .select(
+      `
       id,
       appointment_date,
       start_time,
@@ -60,7 +73,8 @@ export async function action({ request }: ActionFunctionArgs) {
       patient_email,
       patient_id,
       status
-    `)
+    `
+    )
     .eq("appointment_date", dateStr)
     .eq("campus_id", campusId)
     .eq("status", "scheduled");
@@ -70,11 +84,11 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   if (!appointments || appointments.length === 0) {
-    return json({ 
-      success: true, 
+    return json({
+      success: true,
       message: "No scheduled appointments found for this date",
       sent: 0,
-      skipped: 0
+      skipped: 0,
     });
   }
 
@@ -88,10 +102,23 @@ export async function action({ request }: ActionFunctionArgs) {
   let failed = 0;
   const errors: string[] = [];
 
+  if (!resend) {
+    return json(
+      {
+        error: "Email service misconfigured",
+        details:
+          "RESEND_API_KEY is missing on the server. Configure the env var and redeploy.",
+      },
+      { status: 500 }
+    );
+  }
+
   // Send emails
   for (const appt of appointmentsWithEmail) {
     try {
-      const formattedDate = new Date(appt.appointment_date + "T00:00:00").toLocaleDateString("en-US", {
+      const formattedDate = new Date(
+        appt.appointment_date + "T00:00:00"
+      ).toLocaleDateString("en-US", {
         weekday: "long",
         year: "numeric",
         month: "long",
@@ -99,9 +126,10 @@ export async function action({ request }: ActionFunctionArgs) {
       });
 
       const formattedTime = formatTime12Hour(appt.start_time);
-      const appointmentTypeLabel = appt.appointment_type === "physical_exam" 
-        ? "Physical Examination" 
-        : "Consultation";
+      const appointmentTypeLabel =
+        appt.appointment_type === "physical_exam"
+          ? "Physical Examination"
+          : "Consultation";
 
       await resend.emails.send({
         from: "LDCU Clinic <noreply@citattendance.info>",
@@ -229,7 +257,9 @@ export async function action({ request }: ActionFunctionArgs) {
       sent++;
     } catch (emailError: any) {
       failed++;
-      errors.push(`Failed to send to ${appt.patient_email}: ${emailError.message}`);
+      errors.push(
+        `Failed to send to ${appt.patient_email}: ${emailError.message}`
+      );
     }
   }
 
